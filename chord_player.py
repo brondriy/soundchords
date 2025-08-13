@@ -1,6 +1,14 @@
 import numpy as np
-import simpleaudio as sa
 import tkinter as tk
+
+try:
+    import simpleaudio as sa
+except ModuleNotFoundError:  # pragma: no cover - depends on environment
+    sa = None
+    print(
+        "simpleaudio not installed. Install it with 'pip install simpleaudio' "
+        "or configure an alternative audio backend."
+    )
 
 # Sample rate and duration for generated tones
 SAMPLE_RATE = 44100
@@ -36,6 +44,13 @@ def generate_tone(freq: float) -> np.ndarray:
 
 def play_chord(notes: list[str]) -> None:
     """Play a chord composed of the provided notes."""
+    if sa is None:
+        print(
+            "Cannot play audio because simpleaudio is not installed. "
+            "See README for installation instructions."
+        )
+        return
+
     waves = [generate_tone(NOTE_FREQS[note]) for note in notes]
     audio = sum(waves)
     audio *= 32767 / np.max(np.abs(audio))  # Normalize to 16-bit range
