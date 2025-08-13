@@ -1,23 +1,19 @@
 # Chord Player
 
-This project provides a small Tkinter application that plays major chords using synthesized sine waves.
+This project provides a small Tkinter application that plays major chords
+using only Python's standard library. Audio playback relies on the
+`winsound` module, which is available on Windows.
 
 ## Requirements
 
-- Python 3
-- [numpy](https://pypi.org/project/numpy/)
-- [simpleaudio](https://pypi.org/project/simpleaudio/) (optional, required for sound output)
+- Python 3 on Windows
 
-Install dependencies with:
-
-```bash
-pip install -r requirements.txt
-```
-
-If `simpleaudio` is missing or fails to install (for example, on Windows it may require the Microsoft Visual C++ Build Tools), the program will run but audio playback will be disabled. Follow the message shown at runtime to install `simpleaudio` or configure an alternative audio backend.
+No third-party packages are needed. On non-Windows platforms the program runs
+but remains silent because `winsound` is unavailable.
 
 ## Running
 
 ```bash
 python chord_player.py
 ```
+
