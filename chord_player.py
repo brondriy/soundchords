@@ -34,7 +34,7 @@ SAMPLE_RATE = 44_100
 DURATION = 1.6  # seconds for each note sample
 ATTACK = 0.01  # seconds for attack time
 DECAY = 0.8  # seconds for exponential decay
-RELEASE_TAIL = 0.2  # seconds to let a note linger after release
+RELEASE_TAIL = 0.5  # seconds to let a note linger after release
 
 # Key geometry
 WHITE_W = 20
