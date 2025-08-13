@@ -30,8 +30,9 @@ except Exception:  # pragma: no cover - depends on environment
 
 
 SAMPLE_RATE = 44_100
-DURATION = 1.2  # seconds for each note sample
-DECAY = 0.3  # seconds to fade out
+DURATION = 1.6  # seconds for each note sample
+ATTACK = 0.01  # seconds for attack time
+DECAY = 0.8  # seconds for exponential decay
 
 # Key geometry
 WHITE_W = 20
@@ -85,15 +86,24 @@ NOTE_FREQS = _build_freqs()
 
 
 def synthesize(freq: float) -> bytes:
-    """Return a PCM sample for a single note with a short decay."""
+    """Return a PCM sample for a single note with a piano-like envelope."""
 
     total = int(SAMPLE_RATE * DURATION)
-    decay_start = total - int(SAMPLE_RATE * DECAY)
     frames = []
     for i in range(total):
-        sample = math.sin(2 * math.pi * freq * i / SAMPLE_RATE)
-        if i >= decay_start:
-            sample *= (total - i) / (total - decay_start)
+        t = i / SAMPLE_RATE
+        # Amplitude envelope: quick attack then exponential decay
+        if t < ATTACK:
+            amp = t / ATTACK
+        else:
+            amp = math.exp(-(t - ATTACK) / DECAY)
+        # Add a few harmonics to mimic a piano timbre
+        sample = (
+            1.0 * math.sin(2 * math.pi * freq * t)
+            + 0.6 * math.sin(2 * math.pi * freq * 2 * t)
+            + 0.3 * math.sin(2 * math.pi * freq * 3 * t)
+        )
+        sample = amp * sample / 1.9  # normalise combined harmonics
         frames.append(struct.pack("<h", int(sample * 32767)))
     return b"".join(frames)
 
