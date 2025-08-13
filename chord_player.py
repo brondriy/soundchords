@@ -89,16 +89,40 @@ def play_chord(notes: tuple[str, ...]) -> None:
 
 
 def main() -> None:
+    """Launch the graphical interface."""
+
     root = tk.Tk()
     root.title("Chord Player")
+    root.configure(bg="#1e1e1e")
+    root.resizable(False, False)
 
-    for name, notes in CHORDS.items():
+    title = tk.Label(
+        root,
+        text="Chord Player",
+        font=("Segoe UI", 24, "bold"),
+        fg="white",
+        bg="#1e1e1e",
+    )
+    title.pack(pady=(10, 5))
+
+    frame = tk.Frame(root, bg="#1e1e1e")
+    frame.pack(padx=10, pady=10)
+
+    buttons = list(CHORDS.items())
+    for idx, (name, notes) in enumerate(buttons):
+        row, col = divmod(idx, 4)
         tk.Button(
-            root,
+            frame,
             text=name,
-            width=5,
+            font=("Segoe UI", 14, "bold"),
+            width=4,
+            fg="white",
+            bg="#3a7ca5",
+            activebackground="#33698d",
+            activeforeground="white",
+            relief=tk.FLAT,
             command=lambda n=notes: play_chord(n),
-        ).pack(side=tk.LEFT, padx=5, pady=5)
+        ).grid(row=row, column=col, padx=5, pady=5)
 
     root.mainloop()
 
