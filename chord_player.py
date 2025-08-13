@@ -1,11 +1,13 @@
-"""Tkinter app to play basic major chords without external libraries.
+"""Tkinter piano with 88 keys and a short decay after key release.
 
-This script synthesizes simple sine waves and plays them using the
-``winsound`` module available on Windows. Hold a button to loop a chord and
-release it to stop playback immediately.
+The program synthesizes simple sine waves for every piano key from
+A0 through C8. Audio playback prefers the ``simpleaudio`` package so
+multiple notes can overlap. If ``simpleaudio`` isn't installed, it
+falls back to the Windows-only ``winsound`` module, which is limited to
+one note at a time.
 
-If ``winsound`` is unavailable (e.g., on non-Windows platforms) the
-program will display a message and remain silent.
+Each note sample includes a linear fade-out so the sound lingers briefly
+after the button is pressed.
 """
 
 from __future__ import annotations
@@ -16,139 +18,175 @@ import wave
 import tempfile
 import tkinter as tk
 
-try:  # winsound is only present on Windows
-    import winsound
-except ImportError:  # pragma: no cover - depends on platform
-    winsound = None
-    print("winsound module not available; audio playback disabled")
+# Try to import simpleaudio for polyphonic playback; fall back to winsound.
+try:  # pragma: no cover - optional dependency
+    import simpleaudio as sa
+    _PLAY_WITH_SIMPLEAUDIO = True
+except Exception:  # pragma: no cover - depends on environment
+    sa = None
+    _PLAY_WITH_SIMPLEAUDIO = False
+    try:  # winsound is Windows-only
+        import winsound
+    except Exception:  # pragma: no cover - depends on environment
+        winsound = None
 
 
 SAMPLE_RATE = 44_100
-# Length of the sample used for looping; shorter keeps latency low
-DURATION = 1.0  # seconds
+DURATION = 1.2  # seconds for each note sample
+DECAY = 0.3  # seconds to fade out
+
+# Key geometry
+WHITE_W = 20
+WHITE_H = 150
+BLACK_W = 12
+BLACK_H = 90
 
 
-# Frequencies for notes in the 4th octave
-NOTE_FREQS = {
-    "C": 261.63,
-    "C#": 277.18,
-    "D": 293.66,
-    "D#": 311.13,
-    "E": 329.63,
-    "F": 349.23,
-    "F#": 369.99,
-    "G": 392.00,
-    "G#": 415.30,
-    "A": 440.00,
-    "A#": 466.16,
-    "B": 493.88,
-}
+def _build_note_list() -> list[str]:
+    """Return names for all 88 piano keys from A0 to C8."""
+
+    names = []
+    sequence = [
+        "A",
+        "A#",
+        "B",
+        "C",
+        "C#",
+        "D",
+        "D#",
+        "E",
+        "F",
+        "F#",
+        "G",
+        "G#",
+    ]
+
+    octave = 0
+    for i in range(88):
+        note = sequence[i % 12]
+        if note == "C" and i != 0:
+            octave += 1
+        names.append(f"{note}{octave}")
+    return names
 
 
-# Major triads using the 4th octave
-CHORDS: dict[str, tuple[str, str, str]] = {
-    "C": ("C", "E", "G"),
-    "D": ("D", "F#", "A"),
-    "E": ("E", "G#", "B"),
-    "F": ("F", "A", "C"),
-    "G": ("G", "B", "D"),
-    "A": ("A", "C#", "E"),
-    "B": ("B", "D#", "F#"),
-}
+NOTE_NAMES = _build_note_list()
 
 
-def synthesize_chord(notes: tuple[str, ...]) -> bytes:
-    """Return raw audio data for the given notes."""
+def _build_freqs() -> dict[str, float]:
+    """Map note names to their frequencies using equal temperament."""
 
+    freqs = {}
+    for idx, name in enumerate(NOTE_NAMES):
+        semitone = idx - 48  # distance from A4
+        freqs[name] = 440 * 2 ** (semitone / 12)
+    return freqs
+
+
+NOTE_FREQS = _build_freqs()
+
+
+def synthesize(freq: float) -> bytes:
+    """Return a PCM sample for a single note with a short decay."""
+
+    total = int(SAMPLE_RATE * DURATION)
+    decay_start = total - int(SAMPLE_RATE * DECAY)
     frames = []
-    for i in range(int(SAMPLE_RATE * DURATION)):
-        sample = sum(
-            math.sin(2 * math.pi * NOTE_FREQS[n] * i / SAMPLE_RATE)
-            for n in notes
-        )
-        sample = int(sample / len(notes) * 32767)
-        frames.append(struct.pack("<h", sample))
-
+    for i in range(total):
+        sample = math.sin(2 * math.pi * freq * i / SAMPLE_RATE)
+        if i >= decay_start:
+            sample *= (total - i) / (total - decay_start)
+        frames.append(struct.pack("<h", int(sample * 32767)))
     return b"".join(frames)
 
 
+def _prepare_audio() -> tuple[dict[str, "sa.WaveObject"], dict[str, str]]:
+    """Precompute audio objects or temp files for all notes."""
 
-def _build_wave_file(notes: tuple[str, ...]) -> str:
-    """Generate a temporary WAV file for the given notes and return its path."""
-
-    frames = synthesize_chord(notes)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        with wave.open(tmp, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(SAMPLE_RATE)
-            wf.writeframes(frames)
-        return tmp.name
-
-
-# Precompute file paths for all chords so playback can start instantly
-CHORD_FILES = {name: _build_wave_file(notes) for name, notes in CHORDS.items()}
-
-
-def start_chord(name: str) -> None:
-    """Begin looping the specified chord until stopped."""
-
-    if winsound is None:  # pragma: no cover - platform dependent
-        print("Cannot play audio: winsound is not available")
-        return
-
-    winsound.PlaySound(
-        CHORD_FILES[name],
-        winsound.SND_FILENAME | winsound.SND_LOOP | winsound.SND_ASYNC,
-    )
+    wave_objects: dict[str, "sa.WaveObject"] = {}
+    file_paths: dict[str, str] = {}
+    for name, freq in NOTE_FREQS.items():
+        frames = synthesize(freq)
+        if _PLAY_WITH_SIMPLEAUDIO:
+            wave_objects[name] = sa.WaveObject(frames, 1, 2, SAMPLE_RATE)
+        elif winsound is not None:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                with wave.open(tmp, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(SAMPLE_RATE)
+                    wf.writeframes(frames)
+                file_paths[name] = tmp.name
+    return wave_objects, file_paths
 
 
-def stop_chord(_event: tk.Event | None = None) -> None:
-    """Stop any currently playing chord."""
+WAVE_OBJECTS, NOTE_FILES = _prepare_audio()
 
-    if winsound is not None:  # pragma: no cover - platform dependent
-        winsound.PlaySound(None, winsound.SND_PURGE)
+
+def play_note(name: str) -> None:
+    """Play a note using whichever backend is available."""
+
+    if _PLAY_WITH_SIMPLEAUDIO:
+        WAVE_OBJECTS[name].play()
+    elif winsound is not None:  # pragma: no cover - Windows only
+        winsound.PlaySound(
+            NOTE_FILES[name],
+            winsound.SND_FILENAME | winsound.SND_ASYNC,
+        )
+    else:  # pragma: no cover - no audio backend
+        print("No audio backend available; cannot play sound")
+
+
+def build_gui() -> tk.Tk:
+    """Create the Tkinter interface resembling a piano."""
+
+    root = tk.Tk()
+    root.title("Virtual Piano")
+    canvas = tk.Canvas(root, width=WHITE_W * 52, height=WHITE_H)
+    canvas.pack()
+
+    white_keys: list[tuple[int, str]] = []
+    black_keys: list[tuple[int, str]] = []
+
+    white_index = 0
+    for name in NOTE_NAMES:
+        if "#" in name:
+            x = white_index * WHITE_W - BLACK_W // 2
+            black_keys.append((x, name))
+        else:
+            x = white_index * WHITE_W
+            white_keys.append((x, name))
+            white_index += 1
+
+    for x, name in white_keys:
+        key = canvas.create_rectangle(
+            x,
+            0,
+            x + WHITE_W,
+            WHITE_H,
+            fill="white",
+            outline="black",
+        )
+        canvas.tag_bind(key, "<Button-1>", lambda _e, n=name: play_note(n))
+
+    for x, name in black_keys:
+        key = canvas.create_rectangle(
+            x,
+            0,
+            x + BLACK_W,
+            BLACK_H,
+            fill="black",
+            outline="black",
+        )
+        canvas.tag_bind(key, "<Button-1>", lambda _e, n=name: play_note(n))
+
+    return root
 
 
 def main() -> None:
-    """Launch the graphical interface."""
+    """Launch the piano GUI."""
 
-    root = tk.Tk()
-    root.title("Chord Player")
-    root.configure(bg="#1e1e1e")
-    root.resizable(False, False)
-
-    title = tk.Label(
-        root,
-        text="Chord Player",
-        font=("Segoe UI", 24, "bold"),
-        fg="white",
-        bg="#1e1e1e",
-    )
-    title.pack(pady=(10, 5))
-
-    frame = tk.Frame(root, bg="#1e1e1e")
-    frame.pack(padx=10, pady=10)
-
-    buttons = list(CHORDS.items())
-    for idx, (name, notes) in enumerate(buttons):
-        row, col = divmod(idx, 4)
-        btn = tk.Button(
-            frame,
-            text=name,
-            font=("Segoe UI", 14, "bold"),
-            width=4,
-            fg="white",
-            bg="#3a7ca5",
-            activebackground="#33698d",
-            activeforeground="white",
-            relief=tk.FLAT,
-        )
-        btn.grid(row=row, column=col, padx=5, pady=5)
-        btn.bind("<ButtonPress-1>", lambda _e, n=name: start_chord(n))
-        btn.bind("<ButtonRelease-1>", stop_chord)
-        btn.bind("<Leave>", stop_chord)
-
+    root = build_gui()
     root.mainloop()
 
 
