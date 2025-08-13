@@ -148,18 +148,23 @@ def _prepare_audio() -> tuple[dict[str, "sa.WaveObject"], dict[str, str]]:
 WAVE_OBJECTS, NOTE_FILES = _prepare_audio()
 
 
-def play_note(name: str) -> None:
-    """Play a note using the synthesized fallback."""
+ACTIVE_NOTES: dict[str, "sa.PlayObject"] = {}
+
+
+def play_note(name: str):
+    """Play a note and return a handle for later stopping."""
 
     if _PLAY_WITH_SIMPLEAUDIO:
-        WAVE_OBJECTS[name].play()
-    elif winsound is not None:  # pragma: no cover - Windows only
+        return WAVE_OBJECTS[name].play()
+    if winsound is not None:  # pragma: no cover - Windows only
         winsound.PlaySound(
             NOTE_FILES[name],
             winsound.SND_FILENAME | winsound.SND_ASYNC,
         )
-    else:  # pragma: no cover - no audio backend
-        print("No audio backend available; cannot play sound")
+        return None
+    # pragma: no cover - no audio backend
+    print("No audio backend available; cannot play sound")
+    return None
 
 
 def stop_note() -> None:
@@ -172,15 +177,19 @@ def stop_note() -> None:
 def start_note(name: str) -> None:
     """Start playing a note."""
 
-    play_note(name)
+    handle = play_note(name)
+    if handle is not None:
+        ACTIVE_NOTES[name] = handle
 
 
 def end_note(name: str) -> None:
     """Stop a note started with :func:`start_note`, leaving a short echo."""
 
-    if winsound is not None:
+    if name in ACTIVE_NOTES:
+        handle = ACTIVE_NOTES.pop(name)
+        threading.Timer(RELEASE_TAIL, handle.stop).start()
+    elif winsound is not None:
         threading.Timer(RELEASE_TAIL, stop_note).start()
-    # simpleaudio notes already decay naturally
 
 
 def build_gui() -> tk.Tk:
