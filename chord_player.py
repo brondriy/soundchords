@@ -1,52 +1,19 @@
 """Tkinter piano with 88 keys.
 
-The program tries to produce **realistic** piano tones by sending MIDI
-``note_on``/``note_off`` events via :mod:`pygame.midi` when that optional
-library is installed. The system's default MIDI synthesizer typically
-provides a sampled acoustic piano sound.
-
-If :mod:`pygame` is unavailable, it falls back to synthesizing simple
-Sine‑wave notes. Those are rendered either with ``simpleaudio`` (allowing
-polyphony) or, on Windows, ``winsound`` (monophonic).
+The application synthesises short sine‑wave notes for each key and plays
+them back using optional audio backends. ``simpleaudio`` provides
+polyphonic playback when installed. On Windows systems the built-in
+``winsound`` module offers a monophonic fallback. No external MIDI
+devices or ``pygame`` dependency are required.
 """
 
 from __future__ import annotations
 
-import atexit
 import math
 import struct
 import wave
 import tempfile
 import tkinter as tk
-
-# MIDI backend using pygame.midi for realistic piano sounds
-try:  # pragma: no cover - optional dependency
-    import pygame.midi as midi
-
-    midi.init()
-    try:
-        _MIDI_OUT = midi.Output(midi.get_default_output_id())
-    except midi.MidiException:
-        _MIDI_OUT = None
-except Exception:  # pragma: no cover - depends on environment
-    midi = None
-    _MIDI_OUT = None
-
-
-# Ensure the MIDI device is closed on exit
-def _close_midi() -> None:  # pragma: no cover - cleanup path
-    """Close and clear any open MIDI resources."""
-
-    global _MIDI_OUT, midi
-    if _MIDI_OUT is not None and not getattr(_MIDI_OUT, "closed", False):
-        _MIDI_OUT.close()
-    _MIDI_OUT = None
-    if midi is not None:
-        midi.quit()
-    midi = None
-
-
-atexit.register(_close_midi)
 
 
 # Try to import simpleaudio for polyphonic playback; fall back to winsound.
@@ -102,15 +69,6 @@ def _build_note_list() -> list[str]:
 
 
 NOTE_NAMES = _build_note_list()
-
-
-def _build_midi_numbers() -> dict[str, int]:
-    """Map each note name to its MIDI note number."""
-
-    return {name: 21 + i for i, name in enumerate(NOTE_NAMES)}
-
-
-NOTE_NUMBERS = _build_midi_numbers()
 
 
 def _build_freqs() -> dict[str, float]:
@@ -185,21 +143,15 @@ def stop_note() -> None:
 
 
 def start_note(name: str) -> None:
-    """Start playing a note, using MIDI when available."""
+    """Start playing a note."""
 
-    if _MIDI_OUT is not None and not getattr(_MIDI_OUT, "closed", False):
-        _MIDI_OUT.note_on(NOTE_NUMBERS[name], 127)
-    else:
-        play_note(name)
+    play_note(name)
 
 
 def end_note(name: str) -> None:
     """Stop a note started with :func:`start_note`."""
 
-    if _MIDI_OUT is not None and not getattr(_MIDI_OUT, "closed", False):
-        _MIDI_OUT.note_off(NOTE_NUMBERS[name], 0)
-    else:
-        stop_note()
+    stop_note()
 
 
 def build_gui() -> tk.Tk:
