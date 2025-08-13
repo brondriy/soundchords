@@ -6,6 +6,14 @@ package (specifically ``pygame.midi``) is installed, key presses send MIDI
 events to the system's default synthesizer, producing realistic piano
 sounds that sustain while keys are held and stop on release.
 
+> **Note**
+> A working system MIDI output is required for the ``pygame.midi`` backend.
+> If no output device is available, ``pygame`` will fall back to silent
+> operation and the application will use synthesized sine waves instead.
+> Should you see "midi Output not open" errors on exit, ensure that your
+> MIDI device is accessible or uninstall ``pygame`` to rely solely on the
+> synthesized fallback.
+
 If ``pygame`` is unavailable, the program falls back to synthesizing short
 sine‑wave notes. Those are rendered using the optional
 [`simpleaudio`](https://pypi.org/project/simpleaudio/) library for

@@ -35,10 +35,15 @@ except Exception:  # pragma: no cover - depends on environment
 
 # Ensure the MIDI device is closed on exit
 def _close_midi() -> None:  # pragma: no cover - cleanup path
-    if _MIDI_OUT is not None:
+    """Close and clear any open MIDI resources."""
+
+    global _MIDI_OUT, midi
+    if _MIDI_OUT is not None and not getattr(_MIDI_OUT, "closed", False):
         _MIDI_OUT.close()
+    _MIDI_OUT = None
     if midi is not None:
         midi.quit()
+    midi = None
 
 
 atexit.register(_close_midi)
@@ -182,7 +187,7 @@ def stop_note() -> None:
 def start_note(name: str) -> None:
     """Start playing a note, using MIDI when available."""
 
-    if _MIDI_OUT is not None:
+    if _MIDI_OUT is not None and not getattr(_MIDI_OUT, "closed", False):
         _MIDI_OUT.note_on(NOTE_NUMBERS[name], 127)
     else:
         play_note(name)
@@ -191,7 +196,7 @@ def start_note(name: str) -> None:
 def end_note(name: str) -> None:
     """Stop a note started with :func:`start_note`."""
 
-    if _MIDI_OUT is not None:
+    if _MIDI_OUT is not None and not getattr(_MIDI_OUT, "closed", False):
         _MIDI_OUT.note_off(NOTE_NUMBERS[name], 0)
     else:
         stop_note()
