@@ -2,7 +2,8 @@
 
 This project provides a small Tkinter application that plays major chords
 using only Python's standard library. Audio playback relies on the
-`winsound` module, which is available on Windows.
+`winsound` module, which is available on Windows. Hold a chord button to
+loop its sound and release to stop.
 
 ## Requirements
 

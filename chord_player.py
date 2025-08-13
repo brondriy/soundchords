@@ -1,8 +1,8 @@
 """Tkinter app to play basic major chords without external libraries.
 
 This script synthesizes simple sine waves and plays them using the
-``winsound`` module available on Windows. Each chord is triggered by a
-button in the GUI.
+``winsound`` module available on Windows. Hold a button to loop a chord and
+release it to stop playback immediately.
 
 If ``winsound`` is unavailable (e.g., on non-Windows platforms) the
 program will display a message and remain silent.
@@ -10,9 +10,9 @@ program will display a message and remain silent.
 
 from __future__ import annotations
 
+import io
 import math
 import struct
-import tempfile
 import wave
 import tkinter as tk
 
@@ -24,7 +24,8 @@ except ImportError:  # pragma: no cover - depends on platform
 
 
 SAMPLE_RATE = 44_100
-DURATION = 1.5  # seconds
+# Length of the sample used for looping; shorter keeps latency low
+DURATION = 1.0  # seconds
 
 
 # Frequencies for notes in the 4th octave
@@ -71,21 +72,42 @@ def synthesize_chord(notes: tuple[str, ...]) -> bytes:
     return b"".join(frames)
 
 
-def play_chord(notes: tuple[str, ...]) -> None:
-    """Synthesize and play the given chord."""
+
+def _build_wave(notes: tuple[str, ...]) -> bytes:
+    """Return a full WAV byte stream for the given notes."""
+
+    frames = synthesize_chord(notes)
+    with io.BytesIO() as buffer:
+        with wave.open(buffer, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(frames)
+        return buffer.getvalue()
+
+
+# Precompute wave data for all chords so playback can start instantly
+CHORD_WAVES = {name: _build_wave(notes) for name, notes in CHORDS.items()}
+
+
+def start_chord(name: str) -> None:
+    """Begin looping the specified chord until stopped."""
 
     if winsound is None:  # pragma: no cover - platform dependent
         print("Cannot play audio: winsound is not available")
         return
 
-    data = synthesize_chord(notes)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        with wave.open(tmp.name, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(SAMPLE_RATE)
-            wf.writeframes(data)
-        winsound.PlaySound(tmp.name, winsound.SND_FILENAME)
+    winsound.PlaySound(
+        CHORD_WAVES[name],
+        winsound.SND_MEMORY | winsound.SND_LOOP | winsound.SND_ASYNC,
+    )
+
+
+def stop_chord(_event: tk.Event | None = None) -> None:
+    """Stop any currently playing chord."""
+
+    if winsound is not None:  # pragma: no cover - platform dependent
+        winsound.PlaySound(None, winsound.SND_PURGE)
 
 
 def main() -> None:
@@ -111,7 +133,7 @@ def main() -> None:
     buttons = list(CHORDS.items())
     for idx, (name, notes) in enumerate(buttons):
         row, col = divmod(idx, 4)
-        tk.Button(
+        btn = tk.Button(
             frame,
             text=name,
             font=("Segoe UI", 14, "bold"),
@@ -121,8 +143,11 @@ def main() -> None:
             activebackground="#33698d",
             activeforeground="white",
             relief=tk.FLAT,
-            command=lambda n=notes: play_chord(n),
-        ).grid(row=row, column=col, padx=5, pady=5)
+        )
+        btn.grid(row=row, column=col, padx=5, pady=5)
+        btn.bind("<ButtonPress-1>", lambda _e, n=name: start_chord(n))
+        btn.bind("<ButtonRelease-1>", stop_chord)
+        btn.bind("<Leave>", stop_chord)
 
     root.mainloop()
 
