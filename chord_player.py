@@ -10,10 +10,10 @@ program will display a message and remain silent.
 
 from __future__ import annotations
 
-import io
 import math
 import struct
 import wave
+import tempfile
 import tkinter as tk
 
 try:  # winsound is only present on Windows
@@ -73,21 +73,21 @@ def synthesize_chord(notes: tuple[str, ...]) -> bytes:
 
 
 
-def _build_wave(notes: tuple[str, ...]) -> bytes:
-    """Return a full WAV byte stream for the given notes."""
+def _build_wave_file(notes: tuple[str, ...]) -> str:
+    """Generate a temporary WAV file for the given notes and return its path."""
 
     frames = synthesize_chord(notes)
-    with io.BytesIO() as buffer:
-        with wave.open(buffer, "wb") as wf:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        with wave.open(tmp, "wb") as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes(frames)
-        return buffer.getvalue()
+        return tmp.name
 
 
-# Precompute wave data for all chords so playback can start instantly
-CHORD_WAVES = {name: _build_wave(notes) for name, notes in CHORDS.items()}
+# Precompute file paths for all chords so playback can start instantly
+CHORD_FILES = {name: _build_wave_file(notes) for name, notes in CHORDS.items()}
 
 
 def start_chord(name: str) -> None:
@@ -98,8 +98,8 @@ def start_chord(name: str) -> None:
         return
 
     winsound.PlaySound(
-        CHORD_WAVES[name],
-        winsound.SND_MEMORY | winsound.SND_LOOP | winsound.SND_ASYNC,
+        CHORD_FILES[name],
+        winsound.SND_FILENAME | winsound.SND_LOOP | winsound.SND_ASYNC,
     )
 
 
