@@ -1,22 +1,48 @@
-"""Tkinter piano with 88 keys and a short decay after key release.
+"""Tkinter piano with 88 keys.
 
-The program synthesizes simple sine waves for every piano key from
-A0 through C8. Audio playback prefers the ``simpleaudio`` package so
-multiple notes can overlap. If ``simpleaudio`` isn't installed, it
-falls back to the Windows-only ``winsound`` module, which is limited to
-one note at a time.
+The program tries to produce **realistic** piano tones by sending MIDI
+``note_on``/``note_off`` events via :mod:`pygame.midi` when that optional
+library is installed. The system's default MIDI synthesizer typically
+provides a sampled acoustic piano sound.
 
-Each note sample includes a linear fade-out so the sound lingers briefly
-after the button is pressed.
+If :mod:`pygame` is unavailable, it falls back to synthesizing simple
+Sine‑wave notes. Those are rendered either with ``simpleaudio`` (allowing
+polyphony) or, on Windows, ``winsound`` (monophonic).
 """
 
 from __future__ import annotations
 
+import atexit
 import math
 import struct
 import wave
 import tempfile
 import tkinter as tk
+
+# MIDI backend using pygame.midi for realistic piano sounds
+try:  # pragma: no cover - optional dependency
+    import pygame.midi as midi
+
+    midi.init()
+    try:
+        _MIDI_OUT = midi.Output(midi.get_default_output_id())
+    except midi.MidiException:
+        _MIDI_OUT = None
+except Exception:  # pragma: no cover - depends on environment
+    midi = None
+    _MIDI_OUT = None
+
+
+# Ensure the MIDI device is closed on exit
+def _close_midi() -> None:  # pragma: no cover - cleanup path
+    if _MIDI_OUT is not None:
+        _MIDI_OUT.close()
+    if midi is not None:
+        midi.quit()
+
+
+atexit.register(_close_midi)
+
 
 # Try to import simpleaudio for polyphonic playback; fall back to winsound.
 try:  # pragma: no cover - optional dependency
@@ -73,6 +99,15 @@ def _build_note_list() -> list[str]:
 NOTE_NAMES = _build_note_list()
 
 
+def _build_midi_numbers() -> dict[str, int]:
+    """Map each note name to its MIDI note number."""
+
+    return {name: 21 + i for i, name in enumerate(NOTE_NAMES)}
+
+
+NOTE_NUMBERS = _build_midi_numbers()
+
+
 def _build_freqs() -> dict[str, float]:
     """Map note names to their frequencies using equal temperament."""
 
@@ -124,7 +159,7 @@ WAVE_OBJECTS, NOTE_FILES = _prepare_audio()
 
 
 def play_note(name: str) -> None:
-    """Play a note using whichever backend is available."""
+    """Play a note using the synthesized fallback."""
 
     if _PLAY_WITH_SIMPLEAUDIO:
         WAVE_OBJECTS[name].play()
@@ -135,6 +170,31 @@ def play_note(name: str) -> None:
         )
     else:  # pragma: no cover - no audio backend
         print("No audio backend available; cannot play sound")
+
+
+def stop_note() -> None:
+    """Stop playback for the synthesized fallback."""
+
+    if winsound is not None:  # pragma: no cover - Windows only
+        winsound.PlaySound(None, winsound.SND_PURGE)
+
+
+def start_note(name: str) -> None:
+    """Start playing a note, using MIDI when available."""
+
+    if _MIDI_OUT is not None:
+        _MIDI_OUT.note_on(NOTE_NUMBERS[name], 127)
+    else:
+        play_note(name)
+
+
+def end_note(name: str) -> None:
+    """Stop a note started with :func:`start_note`."""
+
+    if _MIDI_OUT is not None:
+        _MIDI_OUT.note_off(NOTE_NUMBERS[name], 0)
+    else:
+        stop_note()
 
 
 def build_gui() -> tk.Tk:
@@ -167,7 +227,9 @@ def build_gui() -> tk.Tk:
             fill="white",
             outline="black",
         )
-        canvas.tag_bind(key, "<Button-1>", lambda _e, n=name: play_note(n))
+        canvas.tag_bind(key, "<ButtonPress-1>", lambda _e, n=name: start_note(n))
+        canvas.tag_bind(key, "<ButtonRelease-1>", lambda _e, n=name: end_note(n))
+        canvas.tag_bind(key, "<Leave>", lambda _e, n=name: end_note(n))
 
     for x, name in black_keys:
         key = canvas.create_rectangle(
@@ -178,7 +240,9 @@ def build_gui() -> tk.Tk:
             fill="black",
             outline="black",
         )
-        canvas.tag_bind(key, "<Button-1>", lambda _e, n=name: play_note(n))
+        canvas.tag_bind(key, "<ButtonPress-1>", lambda _e, n=name: start_note(n))
+        canvas.tag_bind(key, "<ButtonRelease-1>", lambda _e, n=name: end_note(n))
+        canvas.tag_bind(key, "<Leave>", lambda _e, n=name: end_note(n))
 
     return root
 
