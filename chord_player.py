@@ -85,11 +85,24 @@ def _build_freqs() -> dict[str, float]:
 NOTE_FREQS = _build_freqs()
 
 
+def apply_reverb(samples: list[float], delay: float = 0.03, decay: float = 0.3) -> list[float]:
+    """Apply a tiny feedback delay for a simple reverb effect."""
+
+    delay_samples = int(SAMPLE_RATE * delay)
+    output = samples[:]
+    for i in range(delay_samples, len(output)):
+        output[i] += decay * output[i - delay_samples]
+
+    # Normalise to keep values within [-1, 1]
+    peak = max((abs(s) for s in output), default=1.0) or 1.0
+    return [s / peak for s in output]
+
+
 def synthesize(freq: float) -> bytes:
     """Return a PCM sample for a single note with a piano-like envelope."""
 
     total = int(SAMPLE_RATE * DURATION)
-    frames = []
+    samples: list[float] = []
     for i in range(total):
         t = i / SAMPLE_RATE
         # Amplitude envelope: quick attack then exponential decay
@@ -103,8 +116,10 @@ def synthesize(freq: float) -> bytes:
             + 0.6 * math.sin(2 * math.pi * freq * 2 * t)
             + 0.3 * math.sin(2 * math.pi * freq * 3 * t)
         )
-        sample = amp * sample / 1.9  # normalise combined harmonics
-        frames.append(struct.pack("<h", int(sample * 32767)))
+        samples.append(amp * sample / 1.9)  # normalise combined harmonics
+
+    samples = apply_reverb(samples)
+    frames = [struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples]
     return b"".join(frames)
 
 
